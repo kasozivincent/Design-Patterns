@@ -1,0 +1,16 @@
+Design Patterns
+===============
+
+Design Patterns have been around in our industry even before the 1990s. In 1994,
+a group of four smart engineers decided to document the then recurring patterns
+that they continously faced daily in their designs in their seminal book, 
+**Design Patterns: Elements of Reusable Object Oriented Software**.
+
+Since the title of the book was so long to pronounce, developers gave it the funny
+name of Gang of Four (GoF) since it was written by four authors.
+
+Reasons to consider Design Patterns
+-----------------------------------
+* Help you create proven designs
+* Enhance your understanding of Frameworks
+* Create a vocabulary between designers

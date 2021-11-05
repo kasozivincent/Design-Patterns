@@ -1,0 +1,33 @@
+Case Study
+==========
+
+We are going to write a simple program that reads trade records 
+from a file, parses them, validates them and then stores them in 
+a database.
+
+Project Workflow
+----------------
+
+#. Read file
+In this part, we read the trade reads from the file in which they are stored.
+
+#. Parsing
+We check to see if the trade records are stored in a valid structure.
+
+#. Validation
+Here we check to see if the corresponding parts of the trade records are valid.
+
+#. Mapping
+Here we map the validated trade records into domain objects.
+
+#. Storage
+In this final step we store this formed domain objects into a database.
+
+ .. image:: /images/projectworkflow.png
+
+
+Valid record format
+-------------------
+
+.. image:: /images/validrecordformat.png
+

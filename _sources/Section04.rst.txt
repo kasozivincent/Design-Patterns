@@ -1,0 +1,249 @@
+Refactor for clarity
+====================
+
+
+The root cause of this problem is the `process_trades` function, it is doing more than one thing.
+We are going to break the `process_trades` function into smaller functions. Its new responsibility 
+will be to cordinate the working of these smaller more focused functions.
+
+.. image:: /images/Cuttheclass.png
+
+Let us start by breaking the `process_trades` method into smaller focused methods.
+
+.. code-block:: python
+    :linenos:
+
+    def process_trades(self) -> None:
+        raw_records = read_records(self.filename)
+        parsed_records = parse_records(raw_records)
+        store_records(parsed_records)
+
+
+read_records()
+--------------
+
+.. code-block:: python
+    :linenos:
+
+    from typing import List
+
+    def read_records(filename) -> List[str]:
+        trade_records: List[str] = []
+        with open(filename) as data_source:
+            for trade_record in data_source: 
+                trade_records.append(trade_record.rstrip())
+        return trade_records
+
+parse_records()
+---------------
+
+.. code-block:: python
+    :linenos:
+
+    def parse_records(trade_records: List[str]) -> List[TradeRecord]:
+        trades: List[TradeRecord] = []
+        for index, line in enumerate(trade_records):
+            fields = line.split(',')
+            if len(fields) != 3: #validation
+                print(f'Line {index} malformed. {len(fields)} field(s) found.') #logging
+                continue
+            if len(fields[0]) != 6:#validation
+                print(f'Trade currencies on line {index} malformed: "{fields[0]}"') #logging
+                continue
+            try:
+                trade_amount = float(fields[1]) #validation
+            except ValueError:
+                print(f"Trade amount on line {index} not a valid integer: '{fields[1]}'") #logging
+                continue
+            try:
+                trade_price = float(fields[2]) #validation
+            except ValueError:
+                print(f"Trade price on line {index} not a valid decimal:'{fields[2]}'") #logging
+                continue
+                
+            #map validated records to domain objects
+            sourceCurrencyCode = fields[0][:3]
+            destinationCurrencyCode = fields[0][3:]
+            trade = TradeRecord(source=sourceCurrencyCode, dest=destinationCurrencyCode,
+                                    amount=trade_amount, price=trade_price)
+            trades.append(trade)
+        return trades
+
+store_records()
+---------------
+
+.. code-block:: python
+    :linenos:
+
+    def store_records(trades: ProcessedRecords) -> None:
+        engine = create_engine('postgresql://postgres:HUFJD1@localhost:5432/python')
+        Session = sessionmaker(bind=engine)
+        Base.metadata.create_all(engine)
+        session = Session()
+        for trade in trades:
+            session.add(trade)
+        session.commit()
+        session.close()
+        print(f'{len(trades)} records have saved')
+
+So far so good. We have created more focused functions from the giant `process_trades` function. Well done!!
+
+.. image:: /images/Newmethods.png
+
+**We can do much better**
+
+
+I don't know about you but for me. `parse_records` is still doing more than one thing. We can do better trust me. It has the following responsibilites.
+
+*  It is parsing the records
+*  It is validating the records
+*  It is logging the errors
+*  It is mapping raw records to domain objects
+
+Let us break it even further. Let's go!!!
+Here is our definition of the `parse_trades` function
+
+.. code-block:: python
+    :linenos:
+
+    def parse_trades(trade_data: List[str]) -> List[TradeRecord]:
+        trades = []
+        for index, line in enumerate(trade_data):
+            fields = line.split(',')
+            if not validate_trade_data(fields, index + 1):
+                continue
+            trade = map_record_to_object(fields)
+            trades.append(trade)
+        return trades
+    
+We have introduced 2 new functions. `validate_trade_data` and `map_record_to_object`.
+
+- `validate_trade_data` is responsible for validation and,
+- `map_record_to_object` is responsible for mapping processed records to domain objects.
+
+validate_trade_data()
+---------------------
+
+.. code-block:: python
+    :linenos:
+
+    def validate_trade_data(record: List[str], index: int) -> bool:
+        if len(record) != 3:
+            print(f'Line {index} malformed. Only {len(fields)} field(s) found.')
+            return False
+        if len(record[0]) != 6:
+            print(f'Trade currencies on line {index} malformed: {fields[0]}')
+            return False
+        try:
+            trade_amount = float(record[1])
+        except ValueError:
+            print(f"Trade amount on line {index} not a valid integer: '{fields[1]}'")
+            return False
+        try:
+            trade_price = float(record[2])
+        except ValueError:
+            print(f'Trade price on line {index} not a valid decimal:{fields[2]}')
+            return False
+        return True
+
+map_record_to_object()
+----------------------
+
+.. code-block:: python
+    :linenos:
+
+    def map_record_to_object(processed_record: List[str]) -> TradeRecord:
+        in_curr = slice(0, 3)
+        out_curr = slice(3, None)
+        source_curr_code = fields[0][in_curr]
+        dest_curr_code = fields[0][out_curr]
+        trade_amount = int(fields[1])
+        trade_price = float(fields[2])
+        trade_record = TradeRecord(source_curr_code, dest_curr_code,trade_amount, trade_price)
+        return trade_record
+
+.. tip::
+   Unit Testing is good. Don't forget please.
+
+.. code-block:: python
+    :linenos:
+
+    def log_message(message: str) -> None:
+        print(message)
+
+.. image:: /images/specialmethods.png
+
+Version Two
+===========
+
+.. code-block:: python
+    :linenos:
+
+    class TradeProcessor:
+        def __init__(self, filename):
+            self.filename = filename
+            
+        def _log_message(self, message: str) -> None:
+            print(message)
+            
+        def process_trades(self) -> None:
+            raw_records = self._read_records()
+            parsed_records = self._parse_records(raw_records)
+            self._store_records(parsed_records)
+            
+        def _read_records(self) -> List[str]:
+            trade_records: List[str] = []
+            with open(self.filename) as data_source:
+                for trade_record in data_source: 
+                    trade_records.append(trade_record)
+            return trade_records
+        
+        def _parse_records(self, trade_data: RawRecords) -> List[TradeRecord]:
+            trades = []
+            for index, line in enumerate(trade_data):
+                fields = line.split(',')
+                if not self._validate_trade_data(fields, index + 1):
+                    continue
+                trade = self._map_record_to_object(fields)
+                trades.append(trade)
+            return trades
+        
+        def _map_record_to_object(self, processed_record: List[str]) -> TradeRecord:
+            in_curr = slice(0, 3);
+            out_curr = slice(3, None)
+            source_curr_code = processed_record[0][in_curr]
+            dest_curr_code = processed_record[0][out_curr]
+            trade_amount = int(processed_record[1])
+            trade_price = float(processed_record[2])
+            trade_record = TradeRecord(source_curr_code, dest_curr_code,trade_amount, trade_price)
+            return trade_record
+        
+        def _store_records(self, trades: ProcessedRecords) -> None:
+            engine = create_engine('postgresql://postgres:u2402/501@localhost:5432/python')
+            Session = sessionmaker(bind=engine)
+            Base.metadata.create_all(engine)
+            session = Session()
+            for trade in trades:
+                session.add(trade)
+            session.commit()
+            session.close()
+            self._log_message(f'{len(trades)} records have saved')
+        
+        def _validate_trade_data(self, record: List[str], index: int) -> bool:
+            if len(record) != 3:
+                self._log_message(f'Line {index} malformed. Only {len(record)} field(s) found.')
+                return False
+            if len(record[0]) != 6:
+                self._log_message(f'Trade currencies on line {index} malformed: {record[0]}')
+                return False
+            try:
+                trade_amount = float(record[1])
+            except ValueError:
+                self._log_message(f"Trade amount on line {index} not a valid integer: '{record[1]}'")
+                return False
+            try:
+                trade_price = float(record[2])
+            except ValueError:
+                self._log_message(f'Trade price on line {index} not a valid decimal:{record[2]}')
+                return False
+            return True

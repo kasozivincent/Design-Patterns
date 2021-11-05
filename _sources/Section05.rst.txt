@@ -1,0 +1,146 @@
+Refactor for adaptability
+=========================
+The previous refactor has been an important stepping stone on the path to truly separating the responsibilities of this class. It has been a refactor for clarity, not for adaptability. The next task is to split each 
+responsibility into different classes and place them behind interfaces. What you need is true abstraction to achieve useful adaptability.
+
+Logger class
+------------
+
+.. code-block:: python
+    :linenos:
+
+    class Logger:
+        def log_message(self, message):
+            print(message)
+
+Reader class
+------------
+
+.. code-block:: python
+    :linenos:
+
+    class Reader:
+        def __init__(self, filename):
+            self.filename = filename
+            
+        def read_records(self) -> List[str]:
+            trade_records: List[str] = []
+            with open(self.filename) as data_source:
+                for trade_record in data_source: 
+                    trade_records.append(trade_record)
+            return trade_records
+
+Validator class
+---------------
+.. code-block:: python
+    :linenos:
+
+    class Validator:
+        def __init__(self):
+            self.logger = Logger() #dependecy
+            
+        def validate_trade_data(self, record: List[str], index: int) -> bool:
+            if len(record) != 3:
+                self.logger.log_message(f'Line {index} malformed. Only {len(record)} field(s) found.')
+                return False
+            if len(record[0]) != 6:
+                self.logger.log_message(f'Trade currencies on line {index} malformed: {record[0]}')
+                return False
+            try:
+                trade_amount = float(record[1])
+            except ValueError:
+                self.logger.log_message(f"Trade amount on line {index} not a valid integer: '{record[1]}'")
+                return False
+            try:
+                trade_price = float(record[2])
+            except ValueError:
+                self.logger.log_message(f'Trade price on line {index} not a valid decimal:{record[2]}')
+                return False
+            return True
+
+Mapper class
+------------
+.. code-block:: python
+    :linenos:
+
+    class Mapper:
+        def map_record_to_object(self, processed_record: List[str]) -> TradeRecord:
+            in_curr = slice(0, 3)
+            out_curr = slice(3, None)
+            source_curr_code = processed_record[0][in_curr]
+            dest_curr_code = processed_record[0][out_curr]
+            trade_amount = int(processed_record[1])
+            trade_price = float(processed_record[2])
+            trade_record = TradeRecord(source_curr_code, dest_curr_code,trade_amount, trade_price)
+            return trade_record
+
+Parser class
+------------
+.. code-block:: python
+    :linenos:
+
+    class Parser:
+        def __init__(self):
+            self.validator = Validator() #dependecy
+            self.mapper = Mapper() #dependecy
+            
+        def parse_trades(self, trade_data: List[str]) -> List[str]:
+            trades = []
+            for index, line in enumerate(trade_data):
+                fields = line.split(',')
+                if not self.validator.validate_trade_data(fields, index + 1):
+                    continue
+                trade = self.mapper.map_record_to_object(fields)
+                trades.append(trade)
+            return trades
+
+Repository class
+----------------
+.. code-block:: python
+    :linenos:
+
+    class Repository:
+        def __init__(self):
+            self.logger = Logger() #dependecy
+            
+        def store_records(self, trades: List[TradeRecord]) -> None:
+            engine = create_engine('postgresql://postgres:HUJD1@localhost:5432/python')
+            Session = sessionmaker(bind=engine)
+            Base.metadata.create_all(engine)
+            session = Session()
+            for trade in trades:
+                session.add(trade)
+            session.commit()
+            session.close()
+            self.logger.log_message(f'{len(trades)} records have saved')
+
+
+Version Three
+=============
+
+.. code-block:: python
+    :linenos:
+
+    class TradeProcessor:
+        def __init__(self, filename) -> None:
+            self.reader = Reader(filename) #dependecy
+            self.parser = Parser() #dependecy
+            self.repo = Repository() #dependecy
+
+        def process_trades(self):
+            records = self.reader.read_records()
+            parsed_records = self.parser.parse_trades(records)
+            self.repo.store_records(parsed_records)
+
+Is this new design any better? Let us check out and see.
+
+.. image:: /images/tightcoupling.png
+
+**Let us analyze our current architecture.**
+
+*  What if the data format changes?
+*  What if we want to log to a text file?
+*  What if the validation rules change
+*  What if we want to read the input data from a source different from a text file?
+*  What if we want to store the data in a NoSQL DB?
+*  What if we want to store the data in a different database?

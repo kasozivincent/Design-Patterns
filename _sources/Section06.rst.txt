@@ -1,0 +1,230 @@
+Abstractions
+============
+
+Parser abstraction
+------------------
+
+.. code-block:: python
+    :linenos:
+
+    from abc import ABC, abstractmethod
+
+    class Parser(ABC):
+        def __init__(self, validator: Validator, mapper: Mapper):
+            self.validator = validator
+            self.mapper = mapper
+            
+        def parse_trades(self, trade_data: List[str]):
+            trades: T = []
+            for index, record in enumerate(trade_data):
+                fields = self.parse(record)
+                if not self.validator.validate(fields, index + 1):
+                    continue
+                trade = self.mapper.map(fields)
+                trades.append(trade)
+            return trades
+        
+        @abstractmethod
+        def parse(self, record: str) -> List[str]:
+            pass
+
+
+Mapper Abstraction
+------------------
+
+.. code-block:: python
+    :linenos:
+
+    class Mapper(ABC):
+        @abstractmethod
+        def map(self, fields: List[str]):
+            pass
+
+Logger Abstraction
+------------------
+
+.. code-block:: python
+    :linenos:
+
+    class Logger(ABC):
+        @abstractmethod
+        def log(self, message):
+            pass
+        
+Validator Abstraction
+---------------------
+
+.. code-block:: python
+    :linenos:
+
+    class Validator(ABC):
+        def __init__(self, logger: Logger):
+            self.logger = logger
+            
+        @abstractmethod
+        def validate(self, fields: List[str], record_line: int) -> bool:
+            pass
+
+**Current Parser UML Diagram**
+
+.. image:: /images/parseruml.png
+
+The Mapper abstraction can have many implementations mapping to different objects
+
+.. image:: /images/mapperuml.png
+
+The Validator abstraction can also have many implementations
+
+.. image:: /images/validatoruml.png
+
+.. important::
+ The Strategy Pattern 
+    Define a family of algorithms, encapsulate each one and make them interchangeable. 
+    Strategy lets the algorithm vary independently from the clients that use it.
+
+The Logger abstraction can also have many implementations
+
+.. image:: /images/loggeruml.png
+
+**The Parser class too can have many different parser implementations**
+
+.. image:: /images/Parseuml.png
+
+.. important::
+  The Template Pattern 
+    Define the skeleton of an algorithm in an operation, deferring some steps to subclasses. Template
+    Method lets subclasses redefine certain steps of an algorithm without changing the algorithm's structure.
+
+Here is the overall diagram of all the abstractions and some of their concrete impelmentations.
+
+.. image:: /images/parsecomplete.png
+
+Examples of Parser classes
+
+
+#. CommaParser class
+ 
+
+.. code-block:: python
+    :linenos:
+
+    class CommaParser(Parser):
+        def __init__(self, validator: Validator, mapper: Mapper):
+            Parser.__init__(self, validator, mapper)
+            
+        def parse(self, record: str)-> List[str]:
+            return record.split(',')
+
+#. SpaceParser class
+
+
+.. code-block:: python
+    :linenos:
+
+    class SpaceParser(Parser):
+        def __init__(self, validator: Validator, mapper: Mapper):
+            Parser.__init__(self, validator, mapper)
+            
+        def parse(self, record: str)-> List[str]:
+            return record.split(' ')
+
+.. important::
+    Dependency Inversion 
+        Dependencies get created before the classes that use them.
+    
+Repository Abstraction
+----------------------
+
+.. code-block:: python
+    :linenos:
+
+    class Repository(ABC):
+        def __init__(self, logger: Logger):
+            self.logger = logger
+            
+        @abstractmethod
+        def store_records(records) -> None:
+            pass
+
+Examples of repository implementations
+
+Postgres Repository
+-------------------
+.. code-block:: python
+    :linenos:
+
+    class PostgresRepo(Repository):
+        def __init__(self, logger: Logger, cnn_string: str):
+            self.cnn_string = cnn_string
+            Repository.__init__(self, logger)
+            
+        def store_records(self, records: List[TradeRecord]) -> None:
+            engine = create_engine(self.cnn_string)
+            Session = sessionmaker(bind=engine)
+            Base.metadata.create_all(engine)
+            session = Session()
+            for trade in trades:
+                session.add(trade)
+            session.commit()
+            session.close()
+            self.logger.log(f'{len(trades)} records have saved')
+
+TextFile Repository
+-------------------
+.. code-block:: python
+    :linenos:
+
+    class TextFileRepo(Repository):
+        def __init__(self, logger: Logger, filename: str):
+            self.filename = filename
+            Repository.__init__(self, logger)
+            
+            
+        def store_records(records: List[TradeRecord]) -> None:
+            with open(self.filename, 'a') as f:
+                for record in records:
+                    f.write(f'{record}\n')
+            self.logger.log(f'{len(trades)} records have saved')
+
+Reader Abstraction
+------------------
+
+.. code-block:: python
+    :linenos:
+
+    class Reader(ABC):
+        @abstractmethod
+        def read_data() -> List[str]:
+            pass
+
+Version 4
+=========
+.. code-block:: python
+    :linenos:
+
+    class TradeProcessor:
+        def __init__(self,reader: Reader, parser: Parser, repo: Repository) -> None:
+            self.reader = reader
+            self.parser = parser
+            self.repo = repo
+
+        def process_trades(self):
+            lines = self.reader.read_data()
+            trades = self.parser.parse_trades(lines)
+            self.repo.store_records(trades)
+
+.. image:: /images/complete.png
+
+Here is a problem. Mark is using our framework but he is so lazy. 
+His friend Eddy told him about a very nice Validator class that is part 
+of some third party library. Mark would want to use that tested class. 
+But there is a problem, it doesn't implement the Validator interface and 
+Mark doesn't have access to it's source code.
+
+.. image:: /images/Adapter.png
+
+.. important::
+  The Adapter Pattern 
+    Convert the interface of a class into another interface clients expert. 
+    Adapter lets classes work together that couldn't otherwise because of incompatible 
+    interfaces.

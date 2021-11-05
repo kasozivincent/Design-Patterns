@@ -1,0 +1,170 @@
+Demos
+=====
+
+For this first one. We are going to read from a text file and store to a text file.
+The record structure has now changed and the new structure is shown below;
+
+.. image:: /images/newdataformat.png
+
+*  The ID is supposed to be 10 characters long and must only contain upper letters and numbers.
+*  The location can be any length and can contain both lower and upper case letters.
+*  The product name can be any length but only letters.
+*  The amount must be an integer.
+  
+We will log to a file this time. So let us roll up a file logger.
+
+.. code-block:: python
+    :linenos:
+
+    class FileLogger(Logger):
+        def __init__(self, filename):
+            self.filename = filename
+
+        def log(self, message):
+             with open(self.filename, 'a') as f:
+                    f.write(f'{message}\n')
+
+This time round, we will map to a user defined class called Customer.
+
+.. code-block:: python
+    :linenos:
+
+    class Customer:
+        def __init__(self, id, loc, product, amount):
+            self.id = id
+            self.loc = loc
+            self.product = product
+            self.amount = amount
+
+        def __str__():
+            return f'[{self.id}, {self.loc}, {self.product}, {self.amount}]'
+
+Cool, let us define a new Mapper class.
+
+.. code-block:: python
+    :linenos:
+
+    class CustomerMapper(Mapper):
+        def map(self, processed_record: List[str]) -> TradeRecord:
+            id = processed_record[0]
+            location = processed_record[1]
+            product = processed_record[2]
+            amount = float(processed_record[3])
+            customer = Customer(id, location,product, amount)
+            return customer
+
+We will assume that different parts of the record are separated by commas so, we will reuse our CommaParser.
+
+.. code-block:: python
+    :linenos:
+
+    class CommaParser(Parser):
+        def __init__(self, validator: Validator, mapper: Mapper):
+            Parser.__init__(self, validator, mapper)
+
+        def parse(self, record: str)-> List[str]:
+            return record.split(',')
+
+We will be reading from a text file so we can reuse our old Text file reader.
+
+.. code-block:: python
+    :linenos:
+
+    class FileReader(Reader):
+        def __init__(self, filename):
+            self.filename = filename
+            
+        def read_data(self):
+            trade_records: List[str] = []
+            with open(self.filename) as data_source:
+                for trade_record in data_source: 
+                    trade_records.append(trade_record.rstrip())
+            return trade_records
+
+Now for the validator, things are a little bit different. We don't want to write the validator class
+ourselves since it is not our expertise. And still, we have access to a third party class but we haven't 
+access to it's source code so we can not make it inherit from our Validator class.
+
+.. code-block:: python
+    :linenos:
+
+    class FancyValidator:
+        def approve(self, word: str):
+            if len(word) == 10:
+                if word.isalnum():
+                    return True
+                else: 
+                    return False
+            else:
+                return False
+                
+        def isword(self, loc: str):
+            if loc.isalpha():
+                    return True
+            else: 
+                    return False
+                
+        def isnumber(self, number: str):
+            if number.isdigit():
+                return True
+            else:
+                return False
+
+Is there any design pattern to save us??
+
+Let us create a new class that inherits from our Validator abstraction. 
+We are going to use this class to wrap the third party class.
+
+Let's dive into some code...
+
+.. code-block:: python
+    :linenos:
+
+    class Adapter(Validator):
+        def __init__(self, logger: Logger, adaptee: FancyValidator):
+            self.logger = logger
+            self.adaptee = adaptee
+            
+            
+        def validate(self, record: List[str], index: int) -> bool:
+            if len(record) != 4: #check number of fields
+                self.logger.log(f'Line {index} malformed. Only {len(record)} field(s) found.')
+                return False
+            if not self.adaptee.approve(record[0]): #check id
+                self.logger.log(f'Id on line {index} malformed: {record[0]}')
+                return False
+            if not self.adaptee.isword(record[1]): #check location
+                self.logger.log(f"Location on {index} is invalid: '{record[1]}'")
+                return False
+            if not self.adaptee.isword(record[2]): #check product
+                self.logger.log(f"Product name on {index} is invalid: '{record[2]}'")
+                return False
+            if not self.adaptee.isnumber(record[3]):
+                self.logger.log(f'Amount on line {index} not a valid int:{record[3]}')
+                return False
+            return True
+
+.. important::
+   The Adapter Pattern 
+    Convert the interface of a class into another interface clients expert. 
+    Adapter lets classes work together that couldn't otherwise because of incompatible interfaces.
+
+Finally we have the TradeProcessor class.
+
+.. image:: /images/graph.png
+
+.. code-block:: python
+    :linenos:
+
+    mapper = CustomerMapper()
+    logger = FileLogger('run.log')
+
+    fancy_validator = FancyValidator()
+    validator = Adapter(logger, fancy_validator)
+    parser = CommaParser(validator, mapper)
+
+    repo = FileRepo('store.txt')
+
+    reader = FileReader('Data2.txt')
+    tradeProcessor = TradeProcessor(reader, parser, repo)
+    tradeProcessor.process_trades()
